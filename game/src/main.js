@@ -9,7 +9,9 @@ import { Car, Traffic, CAR_MODELS } from './vehicles.js';
 import { Pedestrians } from './peds.js';
 import { Player } from './player.js';
 import { Police } from './police.js';
-import { Missions } from './missions.js';
+import { Heli } from './heli.js';
+import { Roadblocks } from './roadblocks.js';
+import { Missions, MISSIONS } from './missions.js';
 import { AudioSys } from './audio.js';
 import { HUD } from './hud.js';
 import { Input } from './input.js';
@@ -24,6 +26,7 @@ class Game {
     this.state = 'menu'; // menu | playing | paused | busted | wasted
     this.camYaw = 0;
     this.camOffset = 0;
+    this.camLift = 0; // staged shots can tilt the camera up (heli in frame)
     this.autopilot = false;
     this.autoWaypoint = 0;
     this.hintText = '';
@@ -67,6 +70,8 @@ class Game {
     this.peds = new Pedestrians(this.scene, this.city, SEED + this.shot.seed, 22);
     this.player = new Player(this.scene, -40, 44);
     this.police = new Police(this.scene, this.city, this);
+    this.heli = new Heli(this.scene, this.city, this);
+    this.roadblocks = new Roadblocks(this.scene, this.city, this);
     this.missions = new Missions(this.scene, this);
     this.audio = new AudioSys();
     this.hud = new HUD(this);
@@ -75,8 +80,15 @@ class Game {
     // The gold sports car for the Hot Wheels job, parked by the plaza.
     const gold = new Car(this.scene, 'sports', 0xffd21e, -116, -184, Math.PI / 2);
     gold.isMissionCar = true;
+    gold.missionId = 'gold-car';
     this.traffic.cars.push({ car: gold, kind: 'parked' });
     this.missionCar = gold;
+    // The parts van for the Garage Heist job, parked at Rico Auto Garage.
+    const van = new Car(this.scene, 'van', 0x4a9a5a, -116, 116, Math.PI / 2);
+    van.isMissionCar = true;
+    van.missionId = 'heist-van';
+    this.traffic.cars.push({ car: van, kind: 'parked' });
+    this.heistVan = van;
 
     // Health pickups: glowing crosses that respawn.
     this.pickups = [];
@@ -300,10 +312,14 @@ class Game {
     }
     if (input.wasPressed('KeyM')) {
       if (!this.missions.active) {
-        if (this.missions.index < 4) this.missions.startNext();
+        if (this.missions.index < MISSIONS.length) this.missions.startNext();
         else this.missions.startFare(Math.random);
       }
     }
+    // Weapon slots: 1 pistol, 2 SMG, 3 shotgun.
+    if (input.wasPressed('Digit1')) { p.switchWeapon(0); this.hud.toast('Pistol', 1); }
+    if (input.wasPressed('Digit2')) { p.switchWeapon(1); this.hud.toast('SMG', 1); }
+    if (input.wasPressed('Digit3')) { p.switchWeapon(2); this.hud.toast('Shotgun', 1); }
     if (input.wasPressed('KeyN')) {
       this.audio.setMuted(!this.audio.muted);
       this.hud.toast(this.audio.muted ? 'Sound off' : 'Sound on', 1.5);
@@ -353,8 +369,8 @@ class Game {
           this.audio.punch();
         }
       }
-      // Shoot on click.
-      if (input.takeClick()) {
+      // Shoot while the mouse is held: the weapon's own fire rate paces it.
+      if (input.mouseDown && p.shootCooldown <= 0) {
         const camDir = this.cameraAimDir();
         const targets = [];
         for (const ped of this.peds.peds) {
@@ -366,7 +382,7 @@ class Game {
         for (const car of this.police.cars) {
           targets.push({ x: car.x, z: car.z, radius: 2.6, ref: car, kind: 'policecar' });
         }
-        const hit = p.shoot(camDir, targets);
+        const hit = p.shoot(camDir, targets, p.weapon);
         this.audio.shot();
         this.peds.scareNear(p.x, p.z, 40, 1);
         if (hit) {
@@ -374,7 +390,7 @@ class Game {
             hit.ref.knockDown();
             this.commitCrime(1, nowSec);
           } else if (hit.kind === 'cop') {
-            this.police.hitCop(hit.ref, nowSec);
+            this.police.hitCop(hit.ref, nowSec, p.weapon.damage);
           } else {
             this.commitCrime(1, nowSec);
           }
@@ -437,6 +453,8 @@ class Game {
     this.traffic.update(dt, playerCar, otherCars);
     this.peds.update(dt, p.pos);
     this.police.update(dt, p, nowSec);
+    this.heli.update(dt, p);
+    this.roadblocks.update(dt, p);
     this.missions.update(dt, p);
 
     // Health pickups.
@@ -525,7 +543,7 @@ class Game {
     this.camera.position.x = lerp2(this.camera.position.x, cx, clamp(dt * 6, 0, 1));
     this.camera.position.y = lerp2(this.camera.position.y, height, clamp(dt * 6, 0, 1));
     this.camera.position.z = lerp2(this.camera.position.z, cz, clamp(dt * 6, 0, 1));
-    this.camera.lookAt(lookX, 1.6, lookZ);
+    this.camera.lookAt(lookX, 1.6 + this.camLift, lookZ);
   }
 
   computeHint() {
@@ -533,7 +551,7 @@ class Game {
     if (p.mode === 'foot') {
       const car = this.traffic.nearestCar(p.x, p.z, 4.5);
       if (car) return 'E — Get in car';
-      return 'WASD move · Shift run · E enter car · Click shoot · F punch';
+      return 'WASD move · Shift run · E enter car · Click shoot · F punch · 1/2/3 weapons';
     }
     return 'WASD drive · Space handbrake · E exit car · M next job · P save · N sound';
   }
@@ -565,6 +583,11 @@ window.__solmar = {
       money: Math.floor(g.player.money),
       wanted: g.police.wanted,
       mission: g.missions.objective.text,
+      missionIndex: g.missions.index,
+      missionsDone: g.missions.completed.length,
+      heli: g.heli.active,
+      roadblocks: g.roadblocks.blocks.length,
+      weapon: g.player.weapon.id,
       traffic: g.traffic.cars.length,
       peds: g.peds.peds.length,
       policeCars: g.police.cars.length,

@@ -105,6 +105,24 @@ export class Police {
     return car;
   }
 
+  // Spawn a patrol car at a road point roughly `dist` from (x, z): close
+  // enough to be seen in the chase, far enough to drive in.
+  spawnPatrolNear(x, z, dist) {
+    for (let tries = 0; tries < 40; tries++) {
+      const vertical = Math.random() < 0.5;
+      const line = this.city.roadsX[Math.floor(Math.random() * this.city.roadsX.length)];
+      const along = -280 + Math.random() * 560;
+      const p = vertical ? { x: line, z: along } : { x: along, z: line };
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (d > dist * 0.7 && d < dist * 1.6) {
+        const car = new Car(this.scene, 'police', 0xf0f0ee, p.x, p.z, 0);
+        this.cars.push(car);
+        return car;
+      }
+    }
+    return this.spawnPatrol(x, z);
+  }
+
   // How many patrol cars the current heat fields.
   wantedCarCount() {
     return this.wanted === 0 ? 0 : Math.min(2 + this.wanted, 6);
@@ -212,8 +230,10 @@ export class Police {
   }
 
   // A cop that was shot or punched goes down and counts as a crime.
-  hitCop(cop, nowSec) {
-    cop.health -= 34;
+  // damage is the weapon's per-hit damage (a shotgun pellet is light,
+  // a pistol round is heavy).
+  hitCop(cop, nowSec, damage = 34) {
+    cop.health -= damage;
     if (cop.health <= 0 && cop.state !== 'down') {
       cop.knockDown();
       cop.downAt = this.game.timeSec;

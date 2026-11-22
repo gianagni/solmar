@@ -4,7 +4,7 @@
 // once, so the city looks finished without hundreds of meshes.
 
 import * as THREE from 'three';
-import { mulberry32, rand, randInt, pick } from './util.js';
+import { mulberry32, rand, randInt, pick, clamp } from './util.js';
 
 export const CITY_HALF = 320; // world runs -320..320 on x and z
 export const ROAD_LINES = [-280, -200, -120, -40, 40, 120, 200, 280];

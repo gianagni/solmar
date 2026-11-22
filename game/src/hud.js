@@ -22,11 +22,13 @@ export class HUD {
       minimap: document.getElementById('minimap'),
       damage: document.getElementById('damage'),
       hint: document.getElementById('hint'),
+      weapons: document.getElementById('weapons'),
     };
     this.mapCtx = this.el.minimap.getContext('2d');
     this.toastTimer = 0;
     this.bannerTimer = 0;
     this.lastHealth = 100;
+    this.weaponHtml = '';
   }
 
   toast(text, seconds = 3.5) {
@@ -89,6 +91,17 @@ export class HUD {
     }
     // Context hint (enter car / punch prompts).
     this.el.hint.textContent = g.hintText || '';
+    // Weapon slots (1 pistol, 2 SMG, 3 shotgun) — only the bar's text is
+    // rebuilt when the selection changes, so it never flickers.
+    const html = ['Pistol', 'SMG', 'Shotgun'].map((name, i) => {
+      const on = i === p.weaponIndex;
+      return `<span class="slot${on ? ' on' : ''}"><b>${i + 1}</b> ${name}</span>`;
+    }).join('');
+    if (html !== this.weaponHtml) {
+      this.weaponHtml = html;
+      this.el.weapons.innerHTML = html;
+    }
+    this.el.weapons.classList.toggle('hidden', p.mode !== 'foot');
     // Toast / banner timers.
     if (this.toastTimer > 0) {
       this.toastTimer -= dt;
@@ -152,6 +165,23 @@ export class HUD {
       const [cx, cy] = toMap(car.x, car.z);
       ctx.fillStyle = Math.sin(g.timeSec * 10) > 0 ? '#ff3030' : '#3080ff';
       ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+    // Roadblocks: red squares where the PD sealed the street.
+    ctx.fillStyle = '#ff2020';
+    for (const b of g.roadblocks.blocks) {
+      for (const car of b.cars) {
+        const [cx, cy] = toMap(car.x, car.z);
+        ctx.fillRect(cx - 2.5, cy - 2.5, 5, 5);
+      }
+    }
+    // CONDOR-1: a big amber dot when the air unit is overhead.
+    if (g.heli.active) {
+      const [hx, hy] = toMap(g.heli.x, g.heli.z);
+      ctx.fillStyle = '#ffb020';
+      ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#20262e';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
     for (const p of g.peds.peds) {
       if (p.state === 'down') continue;

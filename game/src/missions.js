@@ -1,7 +1,7 @@
 // Solmar — story and missions. Riko Vane, a driver fresh out of luck, takes
 // jobs from Mara Solano, a fixer who runs the city's quieter errands. Each
 // mission is a chain of steps: go somewhere, drive something, deliver it,
-// lose the heat. Finish all three, then taxi fares keep paying.
+// lose the heat. Finish all eight, then taxi fares keep paying.
 
 import * as THREE from 'three';
 import { LANDMARKS } from './city.js';
@@ -37,7 +37,7 @@ const MISSIONS = [
     brief: 'A gold sports car is parked by the plaza. Take it to Rico Auto Garage. The owner will notice — expect heat.',
     reward: 800,
     steps: [
-      { type: 'steal', at: { x: -116, z: -184 }, text: 'Take the gold sports car by the plaza' },
+      { type: 'steal', at: { x: -116, z: -184 }, carId: 'gold-car', text: 'Take the gold sports car by the plaza' },
       { type: 'driveTo', at: LANDMARKS.garage, radius: 10, text: 'Deliver the car to Rico Auto Garage' },
     ],
     done: '"Rico says the paint job is clean. Two stars and you still made it. Impressive."',
@@ -53,6 +53,56 @@ const MISSIONS = [
       { type: 'driveTo', at: LANDMARKS.pier, radius: 10, text: 'Deliver the package to Solmar Pier' },
     ],
     done: '"Delivered. The pier crew owes us now. Solmar is yours, Riko — drive it like you own it."',
+  },
+  {
+    id: 'long-way-home',
+    title: 'M5 — The Long Way Home',
+    giver: 'Mara Solano',
+    brief: 'The PD has your plate now, and CONDOR-1 is in the air. Take the long way to the Docks and shake the air unit off your tail.',
+    reward: 1500,
+    wanted: 3,
+    steps: [
+      { type: 'driveTo', at: LANDMARKS.docks, radius: 10, time: 150, text: 'Lose the helicopter — reach the Docks' },
+    ],
+    done: '"The heli lost you in the container rows. Nice flying, Riko."',
+  },
+  {
+    id: 'roadblock-run',
+    title: 'M6 — Roadblock Run',
+    giver: 'Mara Solano',
+    brief: 'The PD sealed the streets with roadblocks. Punch through the checkpoints: Solmar Tower, then Rico Auto Garage. Do not stop.',
+    reward: 1800,
+    wanted: 2,
+    steps: [
+      { type: 'driveTo', at: LANDMARKS.tower, radius: 16, time: 120, text: 'Break through checkpoint 1 — Solmar Tower' },
+      { type: 'driveTo', at: LANDMARKS.garage, radius: 10, time: 120, text: 'Break through checkpoint 2 — Rico Auto Garage' },
+    ],
+    done: '"Two roadblocks, zero stops. The PD is rethinking its whole strategy."',
+  },
+  {
+    id: 'garage-heist',
+    title: 'M7 — Garage Heist',
+    giver: 'Mara Solano',
+    brief: 'A van full of Rico\'s parts is sitting at the garage, keys in it. Take the van and run it to the Docks before the PD locks the yard down.',
+    reward: 2200,
+    steps: [
+      { type: 'steal', at: LANDMARKS.garage, carId: 'heist-van', text: 'Take the parts van at Rico Auto Garage' },
+      { type: 'driveTo', at: LANDMARKS.docks, radius: 10, text: 'Deliver the van to the Docks' },
+    ],
+    done: '"Rico\'s parts, intact. The garage crew is already spending the cut."',
+  },
+  {
+    id: 'the-big-score',
+    title: 'M8 — The Big Score',
+    giver: 'Mara Solano',
+    brief: 'One last job, the big one. Pick up the package at Solmar Tower and run it to the Pier with the whole PD on you — four stars, heli overhead, no mistakes.',
+    reward: 3000,
+    wanted: 4,
+    steps: [
+      { type: 'goto', at: LANDMARKS.tower, radius: 16, text: 'Pick up the package at Solmar Tower' },
+      { type: 'driveTo', at: LANDMARKS.pier, radius: 10, time: 150, text: 'Run the package to Solmar Pier' },
+    ],
+    done: '"That\'s the last of it. Solmar is yours now, Riko — every street, every deal, every dollar."',
   },
 ];
 
@@ -113,6 +163,8 @@ export class Missions {
     if (!m) return false;
     this.active = { mission: m, step: 0 };
     this.stepTimer = 0;
+    // Some jobs start hot: the PD is already on you when the brief lands.
+    if (m.wanted) this.game.police.addWanted(m.wanted, this.game.timeSec);
     this.game.onMissionStart(m);
     this.refreshObjective();
     return true;
@@ -145,11 +197,13 @@ export class Missions {
   }
 
   // Called when the player steals a car (used by the Hot Wheels step).
-  // Only the marked gold sports car counts for that job.
+  // Only the marked car counts for that job (gold car for M3, parts van
+  // for M7); any mission car counts when a step names no car.
   onCarStolen(car) {
     if (!this.active) return;
     const step = this.active.mission.steps[this.active.step];
     if (step && step.type === 'steal' && car.isMissionCar) {
+      if (step.carId && car.missionId !== step.carId) return;
       this.advance();
     }
   }
