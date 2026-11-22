@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solmar — Open-World Crime Game</title>
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.min.js"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<!-- HUD -->
+<div id="hud" class="hidden-until-play">
+  <div id="top-left">
+    <div id="health-bar"><div id="health-fill"></div><span id="health-text">100</span></div>
+    <div id="money">$250</div>
+  </div>
+  <div id="top-right">
+    <div id="stars">☆☆☆☆☆</div>
+  </div>
+  <div id="top-center">
+    <div id="objective"></div>
+    <div id="objective-dist"></div>
+  </div>
+  <div id="bottom-right">
+    <div id="speed">0</div>
+    <div id="speed-label">km/h</div>
+  </div>
+  <div id="bottom-left">
+    <canvas id="minimap" width="190" height="190"></canvas>
+    <div id="hint"></div>
+  </div>
+  <div id="toast"></div>
+  <div id="banner"><div id="banner-title"></div><div id="banner-sub"></div></div>
+  <div id="damage"></div>
+  <div id="crosshair">+</div>
+</div>
+
+<!-- Title screen -->
+<div id="menu" class="overlay">
+  <div class="panel">
+    <h1>SOLMAR</h1>
+    <p class="tagline">Sun, sea, and trouble — an open-world crime game</p>
+    <p class="story">Riko Vane came to Solmar with a dead car and a live debt. Mara Solano,
+      the fixer who runs the city's quieter errands, has work for a driver she
+      can trust. Steal a ride, outrun the Solmar PD, run the jobs — and take
+      the city for yourself.</p>
+    <div class="controls">
+      <b>Drive / walk:</b> WASD or arrows &nbsp;·&nbsp; <b>Run:</b> Shift<br>
+      <b>Enter / exit car:</b> E &nbsp;·&nbsp; <b>Handbrake:</b> Space<br>
+      <b>Shoot:</b> Click &nbsp;·&nbsp; <b>Punch:</b> F &nbsp;·&nbsp; <b>Camera:</b> drag mouse<br>
+      <b>Next job:</b> M &nbsp;·&nbsp; <b>Save:</b> P &nbsp;·&nbsp; <b>Sound:</b> N &nbsp;·&nbsp; <b>Pause:</b> Esc
+    </div>
+    <button id="start-btn" class="big">▶ Start New Game</button>
+    <button id="continue-btn" class="big secondary">Continue</button>
+    <button id="mute-btn" class="small">🔊 Sound: On</button>
+    <p class="foot">An original game. Solmar, Riko Vane, Mara Solano and the Solmar PD are
+      fictional — no Rockstar Games content. Runs fully offline.</p>
+  </div>
+</div>
+
+<!-- Pause -->
+<div id="pause" class="overlay hidden">
+  <div class="panel">
+    <h2>Paused</h2>
+    <p>Solmar waits for no one — except right now.</p>
+    <button id="resume-btn" class="big">Resume</button>
+    <button id="save-btn" class="big secondary">Save Game</button>
+    <button id="quit-btn" class="big secondary">Quit to Title</button>
+  </div>
+</div>
+
+<!-- Busted / wasted -->
+<div id="gameover" class="overlay hidden">
+  <div class="panel">
+    <h2 id="over-title">BUSTED</h2>
+    <p id="over-sub"></p>
+    <button id="over-btn" class="big">Keep Going</button>
+  </div>
+</div>
+
+<div id="webgl-error" class="hidden"></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
