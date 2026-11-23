@@ -1,316 +1,250 @@
-// Solmar — story and missions. Riko Vane, a driver fresh out of luck, takes
-// jobs from Mara Solano, a fixer who runs the city's quieter errands. Each
-// mission is a chain of steps: go somewhere, drive something, deliver it,
-// lose the heat. Finish all eight, then taxi fares keep paying.
-
+// Solmar — the story: 8 missions in sequence (M key), plus repeatable
+// taxi fares. Every step names a place; Tower steps use radius 16 or more,
+// because the Tower's 26x26 collider keeps the closest approach at ~13-15u.
 import * as THREE from 'three';
-import { LANDMARKS } from './city.js';
+import { makePersonMesh } from './player.js';
+import { dist2, mulberry32, pick } from './util.js';
 
-const MISSIONS = [
-  {
-    id: 'meet-mara',
-    title: 'M1 — Meet Mara',
-    giver: 'Mara Solano',
-    brief: 'Mara wants a driver she can trust. Meet her at Cafe Alba.',
-    reward: 150,
-    steps: [
-      { type: 'goto', at: LANDMARKS.cafe, radius: 8, text: 'Meet Mara at Cafe Alba' },
-    ],
-    done: 'Mara: "You drive, I point. First fare is a hotel guest. Don\'t keep him waiting."',
-  },
-  {
-    id: 'first-fare',
-    title: 'M2 — First Fare',
-    giver: 'Mara Solano',
-    brief: 'A hotel guest needs a ride across town. Get in a car and take him to Hotel Miramonte before the meter runs out.',
-    reward: 500,
-    steps: [
-      { type: 'needCar', text: 'Get in a car' },
-      { type: 'driveTo', at: LANDMARKS.hotel, radius: 10, time: 100, text: 'Drive the guest to Hotel Miramonte' },
-    ],
-    done: '"Smooth ride. The guest tipped. Mara\'s got bigger work for you."',
-  },
-  {
-    id: 'hot-wheels',
-    title: 'M3 — Hot Wheels',
-    giver: 'Mara Solano',
-    brief: 'A gold sports car is parked by the plaza. Take it to Rico Auto Garage. The owner will notice — expect heat.',
-    reward: 800,
-    steps: [
-      { type: 'steal', at: { x: -116, z: -184 }, carId: 'gold-car', text: 'Take the gold sports car by the plaza' },
-      { type: 'driveTo', at: LANDMARKS.garage, radius: 10, text: 'Deliver the car to Rico Auto Garage' },
-    ],
-    done: '"Rico says the paint job is clean. Two stars and you still made it. Impressive."',
-  },
-  {
-    id: 'the-drop',
-    title: 'M4 — The Drop',
-    giver: 'Mara Solano',
-    brief: 'A package waits at the docks. Pick it up on foot, then run it to Solmar Pier. The PD knows the route — bring speed.',
-    reward: 1200,
-    steps: [
-      { type: 'goto', at: LANDMARKS.docks, radius: 8, text: 'Pick up the package at the Docks' },
-      { type: 'driveTo', at: LANDMARKS.pier, radius: 10, text: 'Deliver the package to Solmar Pier' },
-    ],
-    done: '"Delivered. The pier crew owes us now. Solmar is yours, Riko — drive it like you own it."',
-  },
-  {
-    id: 'long-way-home',
-    title: 'M5 — The Long Way Home',
-    giver: 'Mara Solano',
-    brief: 'The PD has your plate now, and CONDOR-1 is in the air. Take the long way to the Docks and shake the air unit off your tail.',
-    reward: 1500,
-    wanted: 3,
-    steps: [
-      { type: 'driveTo', at: LANDMARKS.docks, radius: 10, time: 150, text: 'Lose the helicopter — reach the Docks' },
-    ],
-    done: '"The heli lost you in the container rows. Nice flying, Riko."',
-  },
-  {
-    id: 'roadblock-run',
-    title: 'M6 — Roadblock Run',
-    giver: 'Mara Solano',
-    brief: 'The PD sealed the streets with roadblocks. Punch through the checkpoints: Solmar Tower, then Rico Auto Garage. Do not stop.',
-    reward: 1800,
-    wanted: 2,
-    steps: [
-      { type: 'driveTo', at: LANDMARKS.tower, radius: 16, time: 120, text: 'Break through checkpoint 1 — Solmar Tower' },
-      { type: 'driveTo', at: LANDMARKS.garage, radius: 10, time: 120, text: 'Break through checkpoint 2 — Rico Auto Garage' },
-    ],
-    done: '"Two roadblocks, zero stops. The PD is rethinking its whole strategy."',
-  },
-  {
-    id: 'garage-heist',
-    title: 'M7 — Garage Heist',
-    giver: 'Mara Solano',
-    brief: 'A van full of Rico\'s parts is sitting at the garage, keys in it. Take the van and run it to the Docks before the PD locks the yard down.',
-    reward: 2200,
-    steps: [
-      { type: 'steal', at: LANDMARKS.garage, carId: 'heist-van', text: 'Take the parts van at Rico Auto Garage' },
-      { type: 'driveTo', at: LANDMARKS.docks, radius: 10, text: 'Deliver the van to the Docks' },
-    ],
-    done: '"Rico\'s parts, intact. The garage crew is already spending the cut."',
-  },
-  {
-    id: 'the-big-score',
-    title: 'M8 — The Big Score',
-    giver: 'Mara Solano',
-    brief: 'One last job, the big one. Pick up the package at Solmar Tower and run it to the Pier with the whole PD on you — four stars, heli overhead, no mistakes.',
-    reward: 3000,
-    wanted: 4,
-    steps: [
-      { type: 'goto', at: LANDMARKS.tower, radius: 16, text: 'Pick up the package at Solmar Tower' },
-      { type: 'driveTo', at: LANDMARKS.pier, radius: 10, time: 150, text: 'Run the package to Solmar Pier' },
-    ],
-    done: '"That\'s the last of it. Solmar is yours now, Riko — every street, every deal, every dollar."',
-  },
-];
+const REWARDS = [150, 200, 300, 350, 400, 500, 600, 1000];
 
-export class Missions {
-  constructor(scene, game) {
-    this.scene = scene;
-    this.game = game;
-    this.index = 0; // next mission to run
-    this.completed = [];
-    this.active = null; // { mission, step }
-    this.stepTimer = 0;
-    this.marker = null; // { mesh, ring }
-    this.fare = null; // repeatable taxi fare after the story
-    this.objective = { text: 'Free roam — press M for missions', x: null, z: null };
-    this.buildMarker();
-  }
+function step(type, x, z, radius, label) {
+  return { type, x, z, radius, label, done: false };
+}
 
-  buildMarker() {
-    const group = new THREE.Group();
-    const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(2.2, 2.2, 60, 16, 1, true),
-      new THREE.MeshBasicMaterial({
-        color: 0xffd21e, transparent: true, opacity: 0.22,
-        side: THREE.DoubleSide, depthWrite: false,
-      }),
-    );
-    beam.position.y = 30;
-    group.add(beam);
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(5, 0.35, 8, 32),
-      new THREE.MeshBasicMaterial({ color: 0xffd21e }),
-    );
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = 0.4;
-    group.add(ring);
-    const diamond = new THREE.Mesh(
-      new THREE.OctahedronGeometry(1.6),
-      new THREE.MeshBasicMaterial({ color: 0xffd21e }),
-    );
-    diamond.position.y = 9;
-    group.add(diamond);
-    group.visible = false;
-    this.scene.add(group);
-    this.marker = { group, diamond, ring };
-  }
+export function missionDefs(G) {
+  const c = G.city;
+  return [
+    {
+      id: 'M1', title: 'Meet Mara',
+      brief: 'Mara Solano is waiting at the fountain square. Walk over and say hello — she has work for you.',
+      steps: [
+        step('goto', c.fountain.x, c.fountain.z, 6, 'Walk to the fountain square'),
+        step('talk', c.mara.x, c.mara.z, 3, 'Talk to Mara (press E)'),
+      ],
+    },
+    {
+      id: 'M2', title: 'First Fare',
+      brief: 'The taxi is waiting at the stand. Pick up your passenger and drive them across town — on time.',
+      timer: 150,
+      steps: [
+        step('enter', c.taxiStand.x, c.taxiStand.z, 6, 'Get in the taxi at the stand'),
+        step('driveTo', 152, -88, 8, 'Drive your fare to Marina East'),
+      ],
+    },
+    {
+      id: 'M3', title: 'Hot Wheels',
+      brief: 'A gold coupe is parked on the west side. Steal it and bring it to the garage — no scratches, no cops.',
+      steps: [
+        step('enter', c.goldCar.x, c.goldCar.z, 6, 'Steal the gold car'),
+        step('driveTo', c.garage.x, c.garage.z, 10, 'Deliver it to the garage'),
+      ],
+    },
+    {
+      id: 'M4', title: 'The Drop',
+      brief: 'A package is waiting at the north depot. Drive it down to the pier before the buyer leaves.',
+      timer: 120,
+      steps: [
+        step('goto', 80, -80, 6, 'Pick up the package at the north depot'),
+        step('driveTo', c.pier.x, c.pier.z, 10, 'Drive the package to the pier'),
+      ],
+    },
+    {
+      id: 'M5', title: 'The Long Way Home',
+      brief: 'The Docks are hot tonight. Get the heat on you — three stars — then slip through to the Docks.',
+      steps: [
+        step('heat', 0, 0, 0, 'Raise your wanted level to 3 stars'),
+        step('driveTo', c.docks.x, c.docks.z, 8, 'Reach the Docks while wanted'),
+      ],
+    },
+    {
+      id: 'M6', title: 'Roadblock Run',
+      brief: 'Two stars on your tail and two checkpoints to hit: the Tower, then the Garage. Do not stop for anyone.',
+      timer: 120,
+      steps: [
+        step('heat', 0, 0, 0, 'Raise your wanted level to 2 stars'),
+        step('driveTo', c.tower.x, c.tower.z, 16, 'Checkpoint 1: Solmar Tower'),
+        step('driveTo', c.garage.x, c.garage.z, 16, 'Checkpoint 2: the Garage'),
+      ],
+    },
+    {
+      id: 'M7', title: 'Garage Heist',
+      brief: 'The heist van is parked behind the garage. Take it and deliver it to the Docks — quietly.',
+      steps: [
+        step('enter', 40, 56, 6, 'Steal the heist van at the garage'),
+        step('driveTo', c.docks2.x, c.docks2.z, 10, 'Deliver the van to the Docks'),
+      ],
+    },
+    {
+      id: 'M8', title: 'The Big Score',
+      brief: 'Four stars, one package at the Tower, one drop at the Pier. This is the job Mara has been building toward.',
+      timer: 180,
+      steps: [
+        step('heat', 0, 0, 0, 'Raise your wanted level to 4 stars'),
+        step('goto', c.tower.x, c.tower.z, 16, 'Pick up the package at the Tower'),
+        step('driveTo', c.pier.x, c.pier.z, 10, 'Deliver it to the Pier'),
+      ],
+    },
+  ];
+}
 
-  setMarker(x, z) {
-    if (x === null || x === undefined) {
-      this.marker.group.visible = false;
-      return;
+export function buildMissions(G) {
+  // Mara Solano waits at the fountain — the face of the story.
+  const mara = makePersonMesh({
+    skin: 0xe8b898, shirt: 0xc65b4e, jacket: 0x8a2a4a,
+    pants: 0x2a2a30, cap: 0x8a2a4a,
+  });
+  mara.userData.hideWeapon();
+  mara.position.set(G.city.mara.x, 0, G.city.mara.z);
+  mara.rotation.y = Math.PI;
+  G.scene.add(mara);
+  G.mara = mara;
+  // The package marker: a glowing case that moves with the mission.
+  const markerGeo = new THREE.CylinderGeometry(0.7, 0.7, 2.6, 12, 1, true);
+  const markerMat = new THREE.MeshBasicMaterial({
+    color: 0xffd24d, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const marker = new THREE.Mesh(markerGeo, markerMat);
+  marker.visible = false;
+  G.scene.add(marker);
+  G.missionMarker = marker;
+  G.missions = {
+    defs: missionDefs(G),
+    done: 0,
+    active: null, // {def, stepIdx, timeLeft}
+    fare: null, // {pickup, drop, phase, reward}
+    bannerAt: -99,
+  };
+  G.missions.failActive = () => {
+    if (G.missions.active) {
+      G.events.toast('Mission failed: ' + G.missions.active.def.title);
+      G.missions.active = null;
+      G.hud.objective('Press M to start the next mission.');
+      marker.visible = false;
     }
-    this.marker.group.visible = true;
-    this.marker.group.position.set(x, 0, z);
-  }
+    G.missions.fare = null;
+  };
+  return G.missions;
+}
 
-  startMission(i) {
-    const m = MISSIONS[i];
-    if (!m) return false;
-    this.active = { mission: m, step: 0 };
-    this.stepTimer = 0;
-    // Some jobs start hot: the PD is already on you when the brief lands.
-    if (m.wanted) this.game.police.addWanted(m.wanted, this.game.timeSec);
-    this.game.onMissionStart(m);
-    this.refreshObjective();
-    return true;
-  }
+export function startMission(G, index) {
+  const M = G.missions;
+  if (M.active || index >= M.defs.length) return false;
+  const def = M.defs[index];
+  M.active = { def, stepIdx: 0, timeLeft: def.timer || 0 };
+  G.hud.banner(def.id + ' — ' + def.title, def.brief);
+  G.audio.pickup();
+  M.bannerAt = G.time;
+  return true;
+}
 
-  startNext() {
-    if (this.index >= MISSIONS.length) return false;
-    return this.startMission(this.index);
-  }
+export function startNextMission(G) {
+  return startMission(G, G.missions.done);
+}
 
-  refreshObjective() {
-    if (!this.active) {
-      if (this.fare) {
-        this.objective = { text: `Taxi fare: drop the passenger at the marker ($${this.fare.pay})`, x: this.fare.at.x, z: this.fare.at.z };
-        this.setMarker(this.fare.at.x, this.fare.at.z);
-        return;
-      }
-      this.objective = { text: 'Free roam — press M for the next job', x: null, z: null };
-      this.setMarker(null);
-      return;
-    }
-    const step = this.active.mission.steps[this.active.step];
-    if (!step) { this.objective = { text: '', x: null, z: null }; this.setMarker(null); return; }
-    this.objective = {
-      text: `${this.active.mission.title}: ${step.text}`,
-      x: step.at ? step.at.x : null,
-      z: step.at ? step.at.z : null,
-    };
-    this.setMarker(this.objective.x, this.objective.z);
-  }
-
-  // Called when the player steals a car (used by the Hot Wheels step).
-  // Only the marked car counts for that job (gold car for M3, parts van
-  // for M7); any mission car counts when a step names no car.
-  onCarStolen(car) {
-    if (!this.active) return;
-    const step = this.active.mission.steps[this.active.step];
-    if (step && step.type === 'steal' && car.isMissionCar) {
-      if (step.carId && car.missionId !== step.carId) return;
-      this.advance();
-    }
-  }
-
-  advance() {
-    if (!this.active) return;
-    this.active.step += 1;
-    this.stepTimer = 0;
-    if (this.active.step >= this.active.mission.steps.length) {
-      this.completeMission();
-    } else {
-      this.refreshObjective();
-    }
-  }
-
-  completeMission() {
-    const m = this.active.mission;
-    this.completed.push(m.id);
-    this.index = this.completed.length;
-    this.game.player.money += m.reward;
-    this.game.onMissionComplete(m);
-    this.active = null;
-    this.game.saveGame();
-    if (this.index < MISSIONS.length) {
-      // Next job is one keypress away (M), so the player chooses the pace.
-      this.objective = { text: `${m.title} complete — $${m.reward}. Press M for the next job.`, x: null, z: null };
-      this.setMarker(null);
-    } else {
-      this.objective = { text: `Story complete — $${m.reward}. Taxi fares now pay around town. Press M for a fare.`, x: null, z: null };
-      this.setMarker(null);
-    }
-  }
-
-  failMission(reason) {
-    if (!this.active) return;
-    this.game.onMissionFailed(this.active.mission, reason);
-    this.active = null;
-    this.refreshObjective();
-  }
-
-  startFare(rng) {
-    const spots = Object.values(LANDMARKS);
-    const at = spots[Math.floor(rng() * spots.length)];
-    this.fare = { at, pay: 150 + Math.floor(rng() * 4) * 50 };
-    this.refreshObjective();
-  }
-
-  update(dt, player) {
-    // Marker animation.
-    if (this.marker.group.visible) {
-      this.marker.diamond.rotation.y += dt * 2;
-      this.marker.diamond.position.y = 9 + Math.sin(this.game.timeSec * 2) * 1.2;
-      const s = 1 + Math.sin(this.game.timeSec * 3) * 0.08;
-      this.marker.ring.scale.set(s, s, 1);
-    }
-    // Fare completion.
-    if (this.fare && !this.active) {
-      const dx = player.x - this.fare.at.x, dz = player.z - this.fare.at.z;
-      if (dx * dx + dz * dz < 100) {
-        player.money += this.fare.pay;
-        this.game.onFareDone(this.fare);
-        this.fare = null;
-        this.game.saveGame();
-        this.refreshObjective();
-      }
-    }
-    if (!this.active) return;
-    const step = this.active.mission.steps[this.active.step];
-    if (!step) return;
-    if (step.time !== undefined) {
-      this.stepTimer += dt;
-      if (this.stepTimer > step.time) {
-        this.failMission('Out of time');
-        return;
-      }
-    }
-    switch (step.type) {
-      case 'goto': {
-        const dx = player.x - step.at.x, dz = player.z - step.at.z;
-        if (dx * dx + dz * dz < step.radius * step.radius) this.advance();
-        break;
-      }
-      case 'needCar': {
-        if (player.mode === 'car') this.advance();
-        break;
-      }
-      case 'driveTo': {
-        if (player.mode !== 'car') break;
-        const dx = player.x - step.at.x, dz = player.z - step.at.z;
-        if (dx * dx + dz * dz < step.radius * step.radius) this.advance();
-        break;
-      }
-      case 'steal': {
-        // Advance happens in onCarStolen; the marker sits on the car spot.
-        break;
-      }
-      default:
-        break;
-    }
-  }
-
-  get timeLeft() {
-    if (!this.active) return null;
-    const step = this.active.mission.steps[this.active.step];
-    if (!step || step.time === undefined) return null;
-    return Math.max(0, step.time - this.stepTimer);
+function completeStep(G) {
+  const M = G.missions;
+  const a = M.active;
+  a.stepIdx++;
+  G.audio.pickup();
+  if (a.stepIdx >= a.def.steps.length) {
+    const reward = REWARDS[M.done] || 100;
+    G.player.money += reward;
+    G.hud.money(G.player.money);
+    G.hud.banner(a.def.id + ' complete', 'Paid $' + reward + '. ' + (M.done + 1 < M.defs.length ? 'Press M for the next job.' : 'That was the last job — Solmar is yours.'));
+    G.audio.missionDone();
+    M.done++;
+    M.active = null;
+    G.missionMarker.visible = false;
+    G.events.saveSoon();
   }
 }
 
-export { MISSIONS };
+function stepPos(G, s) {
+  return { x: s.x, z: s.z };
+}
+
+export function updateMissions(G, dt) {
+  const M = G.missions;
+  const p = G.player;
+  if (!M.active && !M.fare) {
+    G.missionMarker.visible = false;
+    return;
+  }
+  if (M.active) {
+    const a = M.active;
+    if (a.def.timer) {
+      a.timeLeft -= dt;
+      if (a.timeLeft <= 0) {
+        G.events.toast('Out of time: ' + a.def.title);
+        M.failActive();
+        return;
+      }
+    }
+    const s = a.def.steps[a.stepIdx];
+    if (!s) return;
+    const pos = stepPos(G, s);
+    // Marker beacon on the current step.
+    G.missionMarker.visible = true;
+    G.missionMarker.position.set(pos.x, 1.3, pos.z);
+    G.missionMarker.rotation.y += dt * 1.5;
+    const d = dist2(p.pos.x, p.pos.z, pos.x, pos.z);
+    const inCar = !p.onFoot;
+    let done = false;
+    if (s.type === 'goto') done = d <= s.radius;
+    else if (s.type === 'driveTo') done = inCar && d <= s.radius;
+    else if (s.type === 'enter') done = inCar && d <= s.radius + 4;
+    else if (s.type === 'talk') done = d <= s.radius && G.flags.talked;
+    else if (s.type === 'heat') done = G.wanted >= (a.def.id === 'M5' ? 3 : a.def.id === 'M6' ? 2 : 4);
+    if (done) {
+      G.flags.talked = false;
+      completeStep(G);
+      return;
+    }
+    const timerText = a.def.timer ? '  ·  ' + Math.ceil(a.timeLeft) + 's' : '';
+    G.hud.objective(a.def.id + ' — ' + s.label + '  ·  ' + Math.round(d) + 'm' + timerText);
+    return;
+  }
+  // Taxi fare: pickup, then drop-off.
+  const f = M.fare;
+  const target = f.phase === 'pickup' ? f.pickup : f.drop;
+  G.missionMarker.visible = true;
+  G.missionMarker.position.set(target.x, 1.3, target.z);
+  G.missionMarker.rotation.y += dt * 1.5;
+  const d = dist2(p.pos.x, p.pos.z, target.x, target.z);
+  const needCar = true;
+  if (d <= 7 && (!needCar || !p.onFoot)) {
+    if (f.phase === 'pickup') {
+      f.phase = 'drop';
+      G.events.toast('Passenger aboard — drive to the marker.');
+      G.audio.pickup();
+    } else {
+      G.player.money += f.reward;
+      G.hud.money(G.player.money);
+      G.events.toast('Fare complete: +$' + f.reward);
+      G.audio.cash();
+      M.fare = null;
+      G.missionMarker.visible = false;
+      G.hud.objective('Press M to start the next mission.');
+    }
+  } else {
+    G.hud.objective('Taxi fare — ' + (f.phase === 'pickup' ? 'pick up your passenger' : 'drop them off') + '  ·  ' + Math.round(d) + 'm');
+  }
+}
+
+export function startFare(G) {
+  const M = G.missions;
+  if (M.active || M.fare || M.done < 2) return false;
+  const rng = G.fareRng || (G.fareRng = mulberry32(20240));
+  const lines = G.city.roads;
+  const pt = () => ({
+    x: pick(rng, lines) + (rng() > 0.5 ? 8 : -8),
+    z: pick(rng, lines) + (rng() > 0.5 ? 8 : -8),
+  });
+  const pickup = pt();
+  let drop = pt();
+  while (dist2(pickup.x, pickup.z, drop.x, drop.z) < 120) drop = pt();
+  const reward = 40 + Math.floor(rng() * 5) * 10;
+  M.fare = { pickup, drop, phase: 'pickup', reward };
+  G.events.toast('New fare: pick up the passenger at the marker.');
+  return true;
+}

@@ -1,44 +1,41 @@
-// Solmar — save and load through localStorage. The save holds money, health,
-// story progress, the player's position and the time of day the run is in.
+// Solmar — localStorage save and load. The save holds money, how many story
+// missions are done, and where the player stood, so Continue resumes a run.
+const KEY = 'solmar-save-v1';
 
-const SAVE_KEY = 'solmar-save-v1';
-
-export function saveGame(game) {
+export function saveGame(G) {
   try {
+    const p = G.player;
     const data = {
-      version: 1,
-      money: Math.floor(game.player.money),
-      health: Math.round(game.player.health),
-      missionsDone: game.missions.completed.slice(),
-      missionIndex: game.missions.index,
-      x: Math.round(game.player.x * 10) / 10,
-      z: Math.round(game.player.z * 10) / 10,
-      heading: game.player.heading,
-      savedAt: new Date().toISOString(),
+      money: Math.round(p.money),
+      missionsDone: G.missions.done,
+      x: Math.round(p.pos.x * 10) / 10,
+      z: Math.round(p.pos.z * 10) / 10,
+      health: Math.round(p.health),
+      savedAt: Date.now(),
     };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    localStorage.setItem(KEY, JSON.stringify(data));
     return true;
-  } catch {
+  } catch (err) {
     return false;
   }
 }
 
 export function loadGame() {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
+    const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (!data || data.version !== 1) return null;
+    if (typeof data.money !== 'number' || typeof data.missionsDone !== 'number') return null;
     return data;
-  } catch {
+  } catch (err) {
     return null;
   }
 }
 
-export function hasSave() {
-  return loadGame() !== null;
-}
-
 export function clearSave() {
-  try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
+  try {
+    localStorage.removeItem(KEY);
+  } catch (err) {
+    /* storage unavailable; nothing to clear */
+  }
 }
